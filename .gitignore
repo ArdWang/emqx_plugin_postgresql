@@ -1,0 +1,8 @@
+/build
+/_build
+*.o
+*.beam
+*.plt
+*.dump
+rebar.lock
+erl_crash.dump

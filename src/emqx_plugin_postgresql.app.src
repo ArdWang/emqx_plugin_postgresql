@@ -1,0 +1,11 @@
+{application, emqx_plugin_postgresql,
+ [{description, "EMQX PostgreSQL plugin."},
+  {vsn, "0.1.0"},
+  {modules, []},
+  {registered, [emqx_plugin_postgresql_sup]},
+  {applications, [kernel, stdlib, epgsql]},
+  {mod, {emqx_plugin_postgresql_app, []}},
+  {env, []},
+  {licenses, ["Apache-2.0"]},
+  {maintainers, [""]}
+ ]}.

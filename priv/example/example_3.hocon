@@ -1,0 +1,23 @@
+plugin_postgresql {
+  connection {
+    server = "pg.example.com:5432"
+    database = "iot_data"
+    username = "iot_user"
+    password = "iot_pass"
+    pool_size = 20
+    health_check_interval = 15s
+  }
+
+  topics = [
+    {
+      name = telemetry_topic,
+      filter = "hygro/deviceTelemetry/#",
+      table = "sensor_data"
+    },
+    {
+      name = status_topic,
+      filter = "hygro/deviceStatus/#",
+      table = "sensor_status"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(erl -eval 'io:format\\(\"~s~n\", [erlang:system_info\\(otp_release\\)]\\), halt\\(\\).' -noshell)",
+      "Bash(dpkg -l)",
+      "Bash(rpm -qa)",
+      "Read(//usr/local/bin/**)",
+      "Read(//usr/bin/**)",
+      "Read(//e//**)"
+    ]
+  }
+}

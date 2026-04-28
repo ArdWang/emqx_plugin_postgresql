@@ -1,0 +1,23 @@
+plugin_postgresql {
+  connection {
+    server = "10.3.64.223:5432"
+    database = "emqx"
+    username = "emqx"
+    password = "123456"
+    pool_size = 16
+    health_check_interval = 20s
+  }
+
+  topics = [
+    {
+      name = telemetry_topic,
+      filter = "device/telemetry/+",
+      table = "sensor_data"
+    },
+    {
+      name = status_topic,
+      filter = "device/status/+",
+      table = "sensor_status"
+    }
+  ]
+}
