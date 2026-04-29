@@ -8,7 +8,10 @@
       "Read(//usr/bin/**)",
       "Read(//e//**)",
       "Bash(asdf list:*)",
-      "Bash(find /Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_postgresql -name *.hocon -o -name *config*)"
+      "Bash(find /Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_postgresql -name *.hocon -o -name *config*)",
+      "Bash(PGPASSWORD=postgres psql *)",
+      "Bash(find *)",
+      "Bash(make compile *)"
     ]
   }
 }

@@ -12,8 +12,8 @@
 ]).
 
 -export([on_message_publish/1]).
--export([on_client_connected/3]).
--export([on_client_disconnected/4]).
+-export([on_client_connected/2]).
+-export([on_client_disconnected/3]).
 
 %%--------------------------------------------------------------------
 %% Application lifecycle
@@ -86,7 +86,7 @@ on_message_publish(Message = #message{topic = Topic}) ->
 %% Hook: client.connected
 %%--------------------------------------------------------------------
 
-on_client_connected(#{clientid := ClientId}, _ConnInfo, _State) ->
+on_client_connected(#{clientid := ClientId}, _ConnInfo) ->
   spawn(fun() ->
     try
       handle_client_event(ClientId, <<"connected">>)
@@ -106,7 +106,7 @@ on_client_connected(#{clientid := ClientId}, _ConnInfo, _State) ->
 %% Hook: client.disconnected
 %%--------------------------------------------------------------------
 
-on_client_disconnected(#{clientid := ClientId}, _Reason, _ConnInfo, _State) ->
+on_client_disconnected(#{clientid := ClientId}, _Reason, _ConnInfo) ->
   spawn(fun() ->
     try
       handle_client_event(ClientId, <<"disconnected">>)
@@ -229,7 +229,10 @@ build_telemetry_sqls(Tables, #{
   lists:map(fun(_Table) ->
     Sql = io_lib:format(
       "INSERT INTO sensor_data (name, ct, ch, ctc, chc, sensor_time) "
-      "VALUES ('~s', ~s, ~s, ~s, ~s, TO_TIMESTAMP(~s));",
+      "VALUES ('~s', ~s, ~s, ~s, ~s, TO_TIMESTAMP(~s)) "
+      "ON CONFLICT (name) "
+      "DO UPDATE SET ct = EXCLUDED.ct, ch = EXCLUDED.ch, "
+      "ctc = EXCLUDED.ctc, chc = EXCLUDED.chc, sensor_time = EXCLUDED.sensor_time;",
       [NameStr, erlang:float_to_list(Ct), erlang:float_to_list(Ch), erlang:float_to_list(Ctc), erlang:float_to_list(Chc), integer_to_list(TimeSec)]
     ),
     unicode:characters_to_list(Sql)
@@ -255,24 +258,16 @@ build_status_sqls(Tables, #{
   end, Tables).
 
 build_client_event_sqls(ClientId, Event) ->
-  AllTables = get_all_tables(),
-  case AllTables of
-    [] -> [];
-    _ ->
-      ClientIdStr = escape_string(ClientId),
-      EventStr = escape_string(Event),
-      NowMs = erlang:system_time(millisecond),
-      lists:map(fun(_Table) ->
-        Sql = io_lib:format(
-          "INSERT INTO sensor_status (name, version, sensor_time) "
-          "VALUES ('~s', '~s', TO_TIMESTAMP((~s :: bigint)/1000)) "
-          "ON CONFLICT (name) "
-          "DO UPDATE SET version = EXCLUDED.version, sensor_time = EXCLUDED.sensor_time;",
-          [ClientIdStr, EventStr, integer_to_list(NowMs)]
-        ),
-        unicode:characters_to_list(Sql)
-      end, AllTables)
-  end.
+  ClientIdStr = escape_string(ClientId),
+  EventStr = escape_string(Event),
+  Sql = io_lib:format(
+    "INSERT INTO emqx_client_events (clientid, event, created_at) "
+    "VALUES ('~s', '~s', CURRENT_TIMESTAMP) "
+    "ON CONFLICT (clientid) "
+    "DO UPDATE SET event = EXCLUDED.event, created_at = EXCLUDED.created_at;",
+    [ClientIdStr, EventStr]
+  ),
+  [unicode:characters_to_list(Sql)].
 
 get_all_tables() ->
   %% Get all configured table names from ETS
@@ -354,7 +349,7 @@ start_resource_if_enabled({ok, #{error := Error, id := ResId}}) ->
   emqx_resource:stop(ResId),
   {error, Error};
 start_resource_if_enabled({error, Reason}) ->
-  {error, Reason};
+  {error, Reason}.
 
 query(SqlList) ->
   query_ret(
@@ -406,7 +401,13 @@ read_config() ->
 postgresql_config_file() ->
   Env = os:getenv("EMQX_PLUGIN_POSTGRESQL_CONF"),
   case Env =:= "" orelse Env =:= false of
-    true -> "etc/emqx_plugin_postgresql.hocon";
+    true ->
+      PrivDir = code:priv_dir(?MODULE),
+      PrivConf = filename:join([PrivDir, "emqx_plugin_postgresql.hocon"]),
+      case filelib:is_regular(PrivConf) of
+        true -> PrivConf;
+        false -> "etc/emqx_plugin_postgresql.hocon"
+      end;
     false -> Env
   end.
 

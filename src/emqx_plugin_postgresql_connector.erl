@@ -147,6 +147,8 @@ check_connectivity(#{conn := Conn}) ->
 
 password_to_list(#{raw := Pwd}) -> password_to_list(Pwd);
 password_to_list(#{password := Pwd}) -> password_to_list(Pwd);
+password_to_list(Fun) when is_function(Fun, 0) ->
+    password_to_list(emqx_secret:unwrap(Fun));
 password_to_list(Pwd) when is_binary(Pwd) -> binary_to_list(Pwd);
 password_to_list(Pwd) when is_list(Pwd) -> Pwd;
 password_to_list(_) -> "".

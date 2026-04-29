@@ -1,28 +1,276 @@
 # emqx_plugin_postgresql
-this is emqx_plugin_postgresql
-```
-❯ 2026-04-28T17:23:02.873700+08:00 [warning] msg: alarm_is_deactivated, name: <<"emqx_plugin:postgresql_connector">>                                                                            
-2026-04-28T17:23:02.873986+08:00 [error] crasher: initial call: application_master:init/4, pid: <0.3136.0>, registered_name: [], exit:                                                          
-{{bad_return,{{emqx_plugin_postgresql_app,start,[normal,[]]},{'EXIT',{{badmatch,error},[{emqx_plugin_postgresql,load,1,[{file,"/Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_ 
-postgresql/src/emqx_plugin_postgresql.erl"},{line,27}]},{emqx_plugin_postgresql_app,start,2,[{file,"/Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_postgresql/src/emqx_plugin_ 
-postgresql_app.erl"},{line,14}]},{application_master,start_it_old,4,[{file,"application_master.erl"},{line,293}]}]}}}},[{application_master,init,4,[{file,"application_master.erl"},{line,142}] 
-},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,241}]}]}, ancestors: [<0.3135.0>], message_queue_len: 1, messages: [{'EXIT',<0.3137.0>,normal}], links: [<0.3135.0>,<0.2039.0>],     
-dictionary: [], trap_exit: true, status: running, heap_size: 376, stack_size: 28, reductions: 170; neighbours:                                                                                  
-2026-04-28T17:23:02.874364+08:00 [alert] msg: failed_to_start_plugin, reason: #{error => "failed_to_start_plugin_app",reason =>                                                                 
-{bad_return,{{emqx_plugin_postgresql_app,start,[normal,[]]},{'EXIT',{{badmatch,error},[{emqx_plugin_postgresql,load,1,[{file,"/Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_p 
-ostgresql/src/emqx_plugin_postgresql.erl"},{line,27}]},{emqx_plugin_postgresql_app,start,2,[{file,"/Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_postgresql/src/emqx_plugin_p 
-ostgresql_app.erl"},{line,14}]},{application_master,start_it_old,4,[{file,"application_master.erl"},{line,293}]}]}}}},app => emqx_plugin_postgresql,err_app => emqx_plugin_postgresql}          
-2026-04-28T17:23:02.924660+08:00 [warning] msg: configured_plugin_not_installed, name_vsn: emqx_plugin_mongodb-0.2.7 这个是什么错误 这个错误了                                                  
 
-⏺ 这是一个崩溃连锁反应。问题出在 emqx_plugin_postgresql.erl:27：
-                                                                                           
-  {ok, _} = start_resource(Connection),                                                                                                                                                         
-                                                                                                                                                                                                
-  当之前 PostgreSQL 连接失败（invalid_password），start_resource 返回了 error 而不是 {ok, _}，导致整个插件启动崩溃。                                                                            
-                                                                                                                                                                                                
-  根本原因：代码中 start_resource_if_enabled 在出错时直接返回裸 error，没有包装成 tuple。让我看一下修复一下。                                                                                   
-                                                                                                                                                                                              
-  Read 2 files (ctrl+o to expand)                                                                                                                                                               
-                                                                                                                                                                                              
-⏺ 问题清楚了。当 start_resource 失败时返回裸 error，导致 load/0 中 {ok, _} = start_resource(...) 模式匹配崩溃。需要修复错误处理，让失败时优雅返回而不是 crash。   
+EMQX 5.x 插件，将 MQTT 消息与客户端事件持久化到 PostgreSQL。
+
+## 功能
+
+| 功能 | 触发方式 | 写入表 |
+|------|---------|--------|
+| **遥测数据** | 发布 `device/telemetry/#` 主题消息 | `sensor_data` |
+| **设备状态** | 发布 `device/status/#` 主题消息 | `sensor_status` |
+| **连接事件** | 客户端连接/断开 | `emqx_client_events` |
+
+## 数据库设计
+
+### 1. `sensor_data` — 遥测数据表
+
+存储设备遥测数据（温度、湿度等），每条消息更新同一设备的最新数据。
+
+```sql
+CREATE TABLE IF NOT EXISTS sensor_data (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    ct DOUBLE PRECISION,
+    ch DOUBLE PRECISION,
+    ctc DOUBLE PRECISION,
+    chc DOUBLE PRECISION,
+    sensor_time TIMESTAMP
+);
+
+-- 唯一约束是 upsert 的前提，必须创建
+ALTER TABLE sensor_data ADD CONSTRAINT uq_sensor_data_name UNIQUE (name);
+
+CREATE INDEX IF NOT EXISTS idx_sensor_data_name ON sensor_data(name);
+CREATE INDEX IF NOT EXISTS idx_sensor_data_sensor_time ON sensor_data(sensor_time);
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | BIGSERIAL | 自增主键 |
+| `name` | VARCHAR(255) | 设备名称（来自 payload 中的 `name` 字段），**唯一约束** |
+| `ct` | DOUBLE PRECISION | 温度值 |
+| `ch` | DOUBLE PRECISION | 湿度值 |
+| `ctc` | DOUBLE PRECISION | 温度校正值 |
+| `chc` | DOUBLE PRECISION | 湿度校正值 |
+| `sensor_time` | TIMESTAMP | 传感器时间戳 |
+
+**upsert 策略**：`ON CONFLICT (name) DO UPDATE` — 同一设备有新数据时，更新该设备的所有字段。
+
+### 2. `sensor_status` — 设备状态表
+
+存储设备上报的状态信息（版本号等），每条状态消息更新同一设备的最新状态。
+
+```sql
+CREATE TABLE IF NOT EXISTS sensor_status (
+    name VARCHAR(255) PRIMARY KEY,
+    version VARCHAR(255),
+    sensor_time TIMESTAMP
+);
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | VARCHAR(255) | 设备名称（从主题路径 `device/status/<name>/...` 提取），**主键** |
+| `version` | VARCHAR(255) | 设备版本号（来自 payload 中的 `version` 字段） |
+| `sensor_time` | TIMESTAMP | 状态时间戳 |
+
+**upsert 策略**：`ON CONFLICT (name) DO UPDATE` — 同一设备有新状态时，更新 `version` 和 `sensor_time`。
+
+### 3. `emqx_client_events` — 客户端事件表
+
+记录设备连接/断开事件，同一 clientid 只保留最新事件状态。
+
+```sql
+CREATE TABLE IF NOT EXISTS emqx_client_events (
+    id BIGSERIAL PRIMARY KEY,
+    clientid VARCHAR(255) NOT NULL,
+    event VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE emqx_client_events ADD CONSTRAINT uq_clientid UNIQUE (clientid);
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | BIGSERIAL | 自增主键 |
+| `clientid` | VARCHAR(255) | MQTT 客户端 ID，**唯一约束** |
+| `event` | VARCHAR(50) | 事件类型：`connected` 或 `disconnected` |
+| `created_at` | TIMESTAMP | 事件发生时间（自动填充 `CURRENT_TIMESTAMP`） |
+
+**upsert 策略**：`ON CONFLICT (clientid) DO UPDATE` — 同一客户端有新事件时，更新 `event` 和 `created_at`。
+
+## 消息格式
+
+### 遥测消息（`device/telemetry/#`）
+
+**主题**：`device/telemetry/` 开头的任意主题
+
+**Payload（JSON）**：
+```json
+{
+  "name": "sensor_001",
+  "ct": 25.6,
+  "ch": 60.3,
+  "ctc": 25.8,
+  "chc": 60.1,
+  "time": 1714370000000
+}
+```
+
+| 字段 | 类型 | 必需 | 默认值 |
+|------|------|------|--------|
+| `name` | string | 否 | `"unknown"` |
+| `ct` | number | 否 | `0.0` |
+| `ch` | number | 否 | `0.0` |
+| `ctc` | number | 否 | `0.0` |
+| `chc` | number | 否 | `0.0` |
+| `time` | number | 否 | 使用 EMQX 消息时间戳 |
+
+### 状态消息（`device/status/#`）
+
+**主题**：`device/status/` 开头的任意主题，设备名从主题路径中自动提取（如 `device/status/sensor_001/battery` → `sensor_001`）
+
+**Payload（JSON）**：
+```json
+{
+  "version": "v2.1.0",
+  "sensor_time": 1714370000000
+}
+```
+
+| 字段 | 类型 | 必需 | 默认值 |
+|------|------|------|--------|
+| `version` | string | 否 | `"unknown"` |
+| `sensor_time` | number | 否 | 使用 EMQX 消息时间戳 |
+
+### 连接事件
+
+由 EMQX 自动触发，无需手动发布消息：
+- 设备连接 → 写入 `{"clientid": "...", "event": "connected"}`
+- 设备断开 → 写入 `{"clientid": "...", "event": "disconnected"}`
+
+## 配置文件
+
+编辑 `priv/emqx_plugin_postgresql.hocon`：
+
+```hocon
+plugin_postgresql {
+  connection {
+    server = "127.0.0.1:5432"     # PostgreSQL 地址:端口
+    database = "postgres"         # 数据库名
+    username = "postgres"         # 用户名
+    password = "postgres"         # 密码
+    ssl {
+      enable = false              # 是否启用 SSL
+    }
+    pool_size = 8                 # 连接池大小
+    health_check_interval = 30s   # 健康检查间隔
+  }
+
+  topics = [
+    {
+      name = telemetry_topic,     # 配置名称（内部标识）
+      filter = "device/telemetry/#",  # MQTT 主题过滤器
+      table = "sensor_data"       # 写入的数据库表名
+    },
+    {
+      name = status_topic,
+      filter = "device/status/#",
+      table = "sensor_status"
+    }
+  ]
+}
+```
+
+## 编译与部署
+
+```bash
+# 编译
+make rel
+
+# 将生成的插件目录复制到 EMQX 的 plugins 目录
+# _build/default/emqx_plugrel/
+```
+
+也可以通过环境变量指定配置文件路径：
+
+```bash
+export EMQX_PLUGIN_POSTGRESQL_CONF=/path/to/custom.hocon
+```
+
+## 修改记录（修复清单）
+
+### 1. 编译错误：`head mismatch`
+
+**文件**：`src/emqx_plugin_postgresql.erl`，第 357 行
+
+**原因**：`start_resource_if_enabled/1` 最后一个子句末尾使用了分号 `;`，导致后续 `query/1` 函数被当作同一函数的子句。
+
+**修复**：分号改为句号 `.`。
+
+### 2. 密码认证失败：`invalid_password`
+
+**文件**：`src/emqx_plugin_postgresql_connector.erl`，`password_to_list/1`
+
+**原因**：EMQX 的 HOCON 配置系统通过 `emqx_schema_secret` 模块将密码值包装成一个闭包 `fun() -> <<"password">> end`。连接器拿到的是函数而非字符串。`password_to_list/1` 没有处理函数类型的分支，走到默认子句返回了空字符串 `""`，导致 PostgreSQL 收到空密码报 `invalid_password`。
+
+**修复**：添加函数类型匹配：
+```erlang
+password_to_list(Fun) when is_function(Fun, 0) ->
+    password_to_list(emqx_secret:unwrap(Fun));
+```
+
+### 3. 客户端连接/断开事件不触发
+
+**文件**：`src/emqx_plugin_postgresql.erl`
+
+**原因**：EMQX 5.x 的 hook 回调签名与早期版本不同：
+- `'client.connected'` 的回调签名是 `(ClientInfo, ConnInfo)` → **2 个参数**
+- `'client.disconnected'` 的回调签名是 `(ClientInfo, Reason, ConnInfo)` → **3 个参数**
+
+原代码 `on_client_connected` 定义为 `/3`、`on_client_disconnected` 定义为 `/4`，参数个数不匹配导致 hook 永远不会被调用。
+
+**修复**：
+- `on_client_connected/3` → `on_client_connected/2`
+- `on_client_disconnected/4` → `on_client_disconnected/3`
+
+### 4. `sensor_data` 表数据不替换
+
+**文件**：`src/emqx_plugin_postgresql.erl`，`build_telemetry_sqls/2`
+
+**原因**：原始 SQL 只有 `INSERT INTO ... VALUES`，没有 `ON CONFLICT` 子句。即使后来添加了 `ON CONFLICT (name, sensor_time)`，由于每次消息的 `sensor_time` 都不同，冲突条件永远不满足，仍然只插入不更新。
+
+**修复**：改为 `ON CONFLICT (name) DO UPDATE` — 同一设备有新数据时覆盖旧数据：
+```sql
+INSERT INTO sensor_data (name, ct, ch, ctc, chc, sensor_time)
+VALUES (...)
+ON CONFLICT (name)
+DO UPDATE SET ct = EXCLUDED.ct, ch = EXCLUDED.ch,
+              ctc = EXCLUDED.ctc, chc = EXCLUDED.chc, sensor_time = EXCLUDED.sensor_time;
+```
+
+### 5. 连接事件写入了错误的表
+
+**文件**：`src/emqx_plugin_postgresql.erl`，`build_client_event_sqls/2`
+
+**原因**：原代码将连接/断开事件写入 `sensor_status` 表（字段为 `name, version, sensor_time`），但实际应该写入专用的事件表 `emqx_client_events`（字段为 `clientid, event, created_at`）。
+
+**修复**：SQL 改为写入 `emqx_client_events` 表：
+```sql
+INSERT INTO emqx_client_events (clientid, event, created_at)
+VALUES ('client_xxx', 'connected', CURRENT_TIMESTAMP)
+ON CONFLICT (clientid)
+DO UPDATE SET event = EXCLUDED.event, created_at = EXCLUDED.created_at;
+```
+
+### 6. 配置文件路径错误
+
+**文件**：`src/emqx_plugin_postgresql.erl`，`postgresql_config_file/0`
+
+**原因**：原代码硬编码路径为 `etc/emqx_plugin_postgresql.hocon`，但插件实际将配置文件放在 `priv/` 目录下。
+
+**修复**：优先从 `priv/` 目录读取，降级到 `etc/` 目录：
+```erlang
+postgresql_config_file() ->
+  case os:getenv("EMQX_PLUGIN_POSTGRESQL_CONF") of
+    "" | false ->
+      PrivDir = code:priv_dir(?MODULE),
+      PrivConf = filename:join([PrivDir, "emqx_plugin_postgresql.hocon"]),
+      case filelib:is_regular(PrivConf) of
+        true -> PrivConf;
+        false -> "etc/emqx_plugin_postgresql.hocon"
+      end;
+    Env -> Env
+  end.
 ```

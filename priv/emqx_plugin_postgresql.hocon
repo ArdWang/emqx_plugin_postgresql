@@ -1,9 +1,9 @@
 plugin_postgresql {
   connection {
-    server = "localhost:5432"
-    database = "emqx"
-    username = "emqx"
-    password = "emqx"
+    server = "127.0.0.1:54322"
+    database = "postgres"
+    username = "postgres"
+    password = "postgres"
     ssl {
       enable = false
     }
