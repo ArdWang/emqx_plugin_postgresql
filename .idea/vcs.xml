@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/bcrypt" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/cowboy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/cowlib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/eetcd" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/ekka" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx_ctl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx_durable_storage" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx_http_lib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx_resource" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/emqx_utils" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/epgsql" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/esockd" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/gen_rpc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/gproc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/hocon" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/jiffy" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/jsx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/lc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/mria" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/optvar" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/pbkdf2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/ranch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/recon" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/replayq" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/snabbkaffe" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/lib/typerefl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/plugins/emqx_plugrel" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/plugins/erlang_qq" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/plugins/erlavro" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/plugins/hocon" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_build/default/plugins/typerefl" vcs="Git" />
+  </component>
+</project>

@@ -6,7 +6,9 @@
       "Bash(rpm -qa)",
       "Read(//usr/local/bin/**)",
       "Read(//usr/bin/**)",
-      "Read(//e//**)"
+      "Read(//e//**)",
+      "Bash(asdf list:*)",
+      "Bash(find /Users/Project/278161009/Gitee/emqx/emqx_plugin_5.4/emqx_plugin_postgresql -name *.hocon -o -name *config*)"
     ]
   }
 }

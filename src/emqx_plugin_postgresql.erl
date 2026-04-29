@@ -24,11 +24,16 @@ load() ->
   load(read_config()).
 
 load(#{connection := Connection, topics := Topics}) ->
-  {ok, _} = start_resource(Connection),
-  topic_parse(Topics),
-  hook('message.publish', {?MODULE, on_message_publish, []}),
-  hook('client.connected', {?MODULE, on_client_connected, []}),
-  hook('client.disconnected', {?MODULE, on_client_disconnected, []});
+  case start_resource(Connection) of
+    {ok, _} ->
+      topic_parse(Topics),
+      hook('message.publish', {?MODULE, on_message_publish, []}),
+      hook('client.connected', {?MODULE, on_client_connected, []}),
+      hook('client.disconnected', {?MODULE, on_client_disconnected, []}),
+      ok;
+    {error, Reason} ->
+      {error, Reason}
+  end;
 load(_) ->
   {error, "config_error"}.
 
@@ -95,7 +100,7 @@ on_client_connected(#{clientid := ClientId}, _ConnInfo, _State) ->
         })
     end
   end),
-  {ok, State}.
+  {ok}.
 
 %%--------------------------------------------------------------------
 %% Hook: client.disconnected
@@ -130,7 +135,7 @@ handle_matched_message(Message, Topic, Tables) ->
     _ ->
       case binary:match(Topic, <<"device/status/">>) of
         {0, _} ->
-          StatusData = parse_status_payload(Message, Topic),
+          StatusData = parse_status_payload(Message),
           SqlList = build_status_sqls(Tables, StatusData),
           query(SqlList);
         _ ->
@@ -225,7 +230,7 @@ build_telemetry_sqls(Tables, #{
     Sql = io_lib:format(
       "INSERT INTO sensor_data (name, ct, ch, ctc, chc, sensor_time) "
       "VALUES ('~s', ~s, ~s, ~s, ~s, TO_TIMESTAMP(~s));",
-      [NameStr, float_to_list(Ct), float_to_list(Ch), float_to_list(Ctc), float_to_list(Chc), integer_to_list(TimeSec)]
+      [NameStr, erlang:float_to_list(Ct), erlang:float_to_list(Ch), erlang:float_to_list(Ctc), erlang:float_to_list(Chc), integer_to_list(TimeSec)]
     ),
     unicode:characters_to_list(Sql)
   end, Tables).
@@ -347,7 +352,9 @@ start_resource_if_enabled({ok, #{error := Error, id := ResId}}) ->
     resource_id => ResId
   }),
   emqx_resource:stop(ResId),
-  error.
+  {error, Error};
+start_resource_if_enabled({error, Reason}) ->
+  {error, Reason};
 
 query(SqlList) ->
   query_ret(
