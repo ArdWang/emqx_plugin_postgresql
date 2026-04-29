@@ -6,3 +6,4 @@
 *.dump
 rebar.lock
 erl_crash.dump
+.claude/settings.local.json
