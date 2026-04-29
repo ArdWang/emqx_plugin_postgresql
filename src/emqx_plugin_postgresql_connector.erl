@@ -158,6 +158,8 @@ do_send_msg(PoolPid, Queries, Message) ->
     lists:foreach(
         fun(Sql) ->
             case epgsql:squery(Conn, Sql) of
+                {ok, _} ->
+                    ok;
                 {ok, _, _} ->
                     ok;
                 {error, Reason} ->
