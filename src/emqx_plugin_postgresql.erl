@@ -127,13 +127,13 @@ on_client_disconnected(#{clientid := ClientId}, _Reason, _ConnInfo) ->
 %%--------------------------------------------------------------------
 
 handle_matched_message(Message, Topic, Tables) ->
-  case binary:match(Topic, <<"device/telemetry/">>) of
+  case binary:match(Topic, <<"/hygro/deviceTelemetry/">>) of
     {0, _} ->
       TelemetryData = parse_telemetry_payload(Message),
       SqlList = build_telemetry_sqls(Tables, TelemetryData),
       query(SqlList);
     _ ->
-      case binary:match(Topic, <<"device/status/">>) of
+      case binary:match(Topic, <<"/hygro/deviceStatus/">>) of
         {0, _} ->
           StatusData = parse_status_payload(Message),
           SqlList = build_status_sqls(Tables, StatusData),
@@ -154,7 +154,7 @@ handle_client_event(ClientId, Event) ->
 %% Payload parsing
 %%--------------------------------------------------------------------
 
-parse_telemetry_payload(Message = #message{payload = Payload, timestamp = Timestamp}) ->
+parse_telemetry_payload(Message = #message{payload = Payload}) ->
   try
     JsonData = jsx:decode(Payload, [return_maps]),
     Name = maps:get(<<"name">>, JsonData, <<"unknown">>),
@@ -162,14 +162,12 @@ parse_telemetry_payload(Message = #message{payload = Payload, timestamp = Timest
     Ch = maps:get(<<"ch">>, JsonData, 0.0),
     Ctc = maps:get(<<"ctc">>, JsonData, 0.0),
     Chc = maps:get(<<"chc">>, JsonData, 0.0),
-    Time = maps:get(<<"time">>, JsonData, Timestamp),
     #{
       <<"name">> => Name,
       <<"ct">> => Ct,
       <<"ch">> => Ch,
       <<"ctc">> => Ctc,
-      <<"chc">> => Chc,
-      <<"time">> => Time
+      <<"chc">> => Chc
     }
   catch
     _:_ ->
@@ -178,36 +176,32 @@ parse_telemetry_payload(Message = #message{payload = Payload, timestamp = Timest
         <<"ct">> => 0.0,
         <<"ch">> => 0.0,
         <<"ctc">> => 0.0,
-        <<"chc">> => 0.0,
-        <<"time">> => Timestamp
+        <<"chc">> => 0.0
       }
   end.
 
-parse_status_payload(Message = #message{payload = Payload, topic = Topic, timestamp = Timestamp}) ->
+parse_status_payload(Message = #message{payload = Payload, topic = Topic}) ->
   Name = extract_device_name_from_topic(Topic),
   try
     JsonData = jsx:decode(Payload, [return_maps]),
     Version = maps:get(<<"version">>, JsonData, <<"unknown">>),
-    SensorTime = maps:get(<<"sensor_time">>, JsonData, Timestamp),
     #{
       <<"name">> => Name,
-      <<"version">> => Version,
-      <<"sensor_time">> => SensorTime
+      <<"version">> => Version
     }
   catch
     _:_ ->
       #{
         <<"name">> => Name,
-        <<"version">> => <<"unknown">>,
-        <<"sensor_time">> => Timestamp
+        <<"version">> => <<"unknown">>
       }
   end.
 
 extract_device_name_from_topic(Topic) ->
   Parts = binary:split(Topic, <<"/">>, [global]),
   case length(Parts) of
-    Length when Length >= 3 ->
-      lists:nth(3, Parts);
+    Length when Length >= 4 ->
+      lists:nth(4, Parts);
     _ ->
       <<"unknown">>
   end.
@@ -221,11 +215,11 @@ build_telemetry_sqls(Tables, #{
   <<"ct">> := Ct,
   <<"ch">> := Ch,
   <<"ctc">> := Ctc,
-  <<"chc">> := Chc,
-  <<"time">> := Time
+  <<"chc">> := Chc
 }) ->
   NameStr = escape_string(Name),
-  TimeSec = safe_div(Time, 1000),
+  TimeMs = erlang:system_time(millisecond),
+  TimeSec = TimeMs div 1000,
   lists:map(fun(_Table) ->
     Sql = io_lib:format(
       "INSERT INTO sensor_data (name, ct, ch, ctc, chc, sensor_time) "
@@ -240,19 +234,18 @@ build_telemetry_sqls(Tables, #{
 
 build_status_sqls(Tables, #{
   <<"name">> := Name,
-  <<"version">> := Version,
-  <<"sensor_time">> := SensorTime
+  <<"version">> := Version
 }) ->
   NameStr = escape_string(Name),
   VersionStr = escape_string(Version),
-  SensorTimeInt = safe_integer(SensorTime),
+  TimeMs = erlang:system_time(millisecond),
   lists:map(fun(_Table) ->
     Sql = io_lib:format(
       "INSERT INTO sensor_status (name, version, sensor_time) "
       "VALUES ('~s', '~s', TO_TIMESTAMP((~s :: bigint)/1000)) "
       "ON CONFLICT (name) "
       "DO UPDATE SET version = EXCLUDED.version, sensor_time = EXCLUDED.sensor_time;",
-      [NameStr, VersionStr, integer_to_list(SensorTimeInt)]
+      [NameStr, VersionStr, integer_to_list(TimeMs)]
     ),
     unicode:characters_to_list(Sql)
   end, Tables).
@@ -437,17 +430,3 @@ float_to_list(F) when is_float(F) ->
   io_lib:format("~w", [F]);
 float_to_list(I) when is_integer(I) ->
   integer_to_list(I).
-
-safe_div(Timestamp, Divisor) when is_integer(Timestamp) ->
-  %% If timestamp is already in seconds (< 10^10), return as-is
-  %% If in milliseconds, divide
-  case Timestamp > 10000000000 of
-    true -> Timestamp div Divisor;
-    false -> Timestamp
-  end;
-safe_div(Timestamp, _) ->
-  Timestamp.
-
-safe_integer(T) when is_integer(T) -> T;
-safe_integer(T) when is_float(T) -> trunc(T);
-safe_integer(_) -> 0.

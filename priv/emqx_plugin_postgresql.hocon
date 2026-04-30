@@ -14,12 +14,12 @@ plugin_postgresql {
   topics = [
     {
       name = telemetry_topic,
-      filter = "device/telemetry/#",
+      filter = "/hygro/deviceTelemetry/#",
       table = "sensor_data"
     },
     {
       name = status_topic,
-      filter = "device/status/#",
+      filter = "/hygro/deviceStatus/#",
       table = "sensor_status"
     }
   ]
